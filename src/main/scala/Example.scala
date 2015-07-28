@@ -1,4 +1,4 @@
-import csv.{CSVParser, CSV}
+import csv.{CSVParser}
 
 case class Address(
                   street: String,
@@ -32,7 +32,15 @@ object Example {
     val csvParser = CSVParser(nullChar)
 
     val row = Seq("guy", "george", "55", "guy.george@gmail.com", "rue des lilas", "4", "91000", "Massy", "France", "\\N")
-
     println(csvParser.parse[Person](row))
+    // Success(Person(guy,george,55,guy.george@gmail.com,Address(rue des lilas,4,91000,Massy,France,None)))
+
+    val rowTooShort = Seq("guy", "george", "55", "guy.george@gmail.com", "rue des lilas", "4", "91000", "Massy", "France")
+    println(csvParser.parse[Person](rowTooShort))
+    // Failure(java.lang.RuntimeException: Expected more cells)
+
+    val rowNotInt = Seq("guy", "george", "55.5", "guy.george@gmail.com", "rue des lilas", "4", "91000", "Massy", "France", "\\N")
+    println(csvParser.parse[Person](rowNotInt))
+    // Failure(java.lang.NumberFormatException: For input string: "55.5")
   }
 }

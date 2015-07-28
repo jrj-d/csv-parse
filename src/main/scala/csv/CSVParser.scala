@@ -7,8 +7,6 @@ trait RowToObjectTransformer[A] { def apply(l: Seq[String], nullChar: String): T
 
 object RowToObjectTransformer {
 
-  //def apply[A](implicit readA: RowToObjectTransformer[A]): RowToObjectTransformer[A] = readA
-
   implicit object RowToStringTransformer extends RowToObjectTransformer[String] {
     def apply(row: Seq[String], nullChar: String) = Success(row.head, row.tail)
   }
@@ -38,15 +36,15 @@ object RowToObjectTransformer {
   }
 
   implicit def RowToCaseClassTransformer[A : Readable, L <: HList](
-    implicit generatorOfA: Generic.Aux[A, L], rowConsumer: RowConsumer[L]) = new RowToObjectTransformer[A] {
+    implicit generatorOfA: Generic.Aux[A, L], rowConsumer: Lazy[RowConsumer[L]]) = new RowToObjectTransformer[A] {
       def apply(row: Seq[String], nullChar: String) =
-        rowConsumer(row, nullChar).map{ case (hList, remainingCells) => (generatorOfA.from(hList), remainingCells)}
+        rowConsumer.value(row, nullChar).map{ case (hList, remainingCells) => (generatorOfA.from(hList), remainingCells)}
   }
 
-  implicit def RowToNullableObjectTransformer[A](implicit rowToObjectTransformer: RowToObjectTransformer[A]) = new RowToObjectTransformer[Option[A]] {
+  implicit def RowToNullableObjectTransformer[A](implicit rowToObjectTransformer: Lazy[RowToObjectTransformer[A]]) = new RowToObjectTransformer[Option[A]] {
     def apply(row: Seq[String], nullChar: String) = row.head match {
       case `nullChar` => Success(None, row.tail)
-      case _ => rowToObjectTransformer(row, nullChar).map{case (value, remainingCells) => (Some(value), remainingCells)}
+      case _ => rowToObjectTransformer.value(row, nullChar).map{case (value, remainingCells) => (Some(value), remainingCells)}
     }
   }
 
@@ -56,18 +54,16 @@ trait RowConsumer[L <: HList] { def apply(row: Seq[String], nullChar: String): T
 
 object RowConsumer {
 
-  //def apply[L <: HList](implicit rowConsumer: RowConsumer[L]): RowConsumer[L] = rowConsumer
-
   implicit val hNilConsumer = new RowConsumer[HNil] {
     def apply(row: Seq[String], nullChar: String) = Success((HNil, row))
   }
 
-  implicit def hConsConsumer[H, T <: HList](implicit rowToObjectTransformer: RowToObjectTransformer[H], rowConsumer: RowConsumer[T]) = new RowConsumer[H :: T] {
+  implicit def hConsConsumer[H, T <: HList](implicit rowToObjectTransformer: Lazy[RowToObjectTransformer[H]], rowConsumer: Lazy[RowConsumer[T]]) = new RowConsumer[H :: T] {
     def apply(row: Seq[String], nullChar: String) = row match {
       case Nil => Failure(new RuntimeException("Expected more cells"))
       case _ => for {
-        (headValue, remainingCellsAfterHead) <- rowToObjectTransformer(row, nullChar)
-        (tailValues, remainingCells) <- rowConsumer(remainingCellsAfterHead, nullChar)
+        (headValue, remainingCellsAfterHead) <- rowToObjectTransformer.value(row, nullChar)
+        (tailValues, remainingCells) <- rowConsumer.value(remainingCellsAfterHead, nullChar)
       } yield (headValue :: tailValues, remainingCells)
     }
   }
@@ -78,8 +74,8 @@ trait Readable[C]
 
 case class CSVParser(nullChar: String) {
 
-  def parse[A](row: Seq[String])(implicit rowToObjectTransformer: RowToObjectTransformer[A]): Try[A] =
-    rowToObjectTransformer(row, nullChar).map{case (value, remainingCells) => value}
+  def parse[A](row: Seq[String])(implicit rowToObjectTransformer: Lazy[RowToObjectTransformer[A]]): Try[A] =
+    rowToObjectTransformer.value(row, nullChar).map{case (value, remainingCells) => value}
 
 }
 
